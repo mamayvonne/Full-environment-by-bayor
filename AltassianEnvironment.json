@@ -1,0 +1,468 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "My first complete Environment build.",
+    "Parameters": {
+        "MasterUsername": {
+            "Description": "DB Username.",
+            "Type": "String",
+            "Default": "postgres"
+        },
+        "MasterPassword": {
+            "Description": "DB Password.",
+            "Type": "String",
+            "Default": "change-me",
+            "NoEcho" : "true"
+        },
+        "KeyName": {
+            "Description": "Name of existing EC2 KeyPair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        },
+        "NameTag": {
+            "Type": "String"
+        },
+        "AMI": {
+            "Type": "String",
+            "Default": "ami-0080e4c5bc078760e"
+        },
+        "EC2TargetGroup8080Name": {
+            "Type": "String"
+        },
+        "EC2TargetGroup8090Name": {
+            "Type": "String"
+        },
+        "VPCID": {
+            "Description": "VPCID",
+            "Type": "AWS::EC2::VPC::Id",
+            "Default": "vpc-49edde33"
+        },
+        "MyUserData": {
+            "Description": "Userdata can be .deploy.sh",
+            "Type": "String",
+            "Default": "/root/.deploy.sh"
+        },
+        "ALBSubnetIDOne": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Default": "subnet-11eb0630"
+        },
+        "ALBSubnetIDTwo": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Default": "subnet-313a100f"
+        },
+        "SubnetOne": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Default": "subnet-6fdf6922"
+        },
+        "SubnetTwo": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Default": "subnet-770ee911"
+        },
+        "SubnetThree": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Default": "subnet-770ee911"
+        },
+        "SubnetFour": {
+            "Type": "AWS::EC2::Subnet::Id",
+            "Default": "subnet-6fdf6922"
+        },
+        "RdsSubnetGroupDB": {
+            "Type": "List<AWS::EC2::Subnet::Id>",
+            "Description": "The list of Subnets for DB Subnet Group."
+        },
+        "RdsStorageType": {
+            "Type": "String",
+            "Description": "Options standard | gp2 | io1",
+            "Default": "gp2"
+        },
+        "RdsSize": {
+            "Type": "String",
+            "Default": 100
+        },
+        "RdsBackupRetention": {
+            "Type": "String",
+            "Default": 7
+        },
+        "RdsEngine": {
+            "Type": "String",
+            "Default": "postgres"
+        },
+        "RdsEngineVersion": {
+            "Type": "String",
+            "Default": "9.6.16"
+        },
+        "JiraServer": {
+            "Description": "EC2 Instance Type",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [ "t2.nano","t2.micro","t2.small","t2.medium","t2.xlarge","t2.2xlarge" ],
+            "ConstraintDescription": "Must be a valid EC2 instance type"
+        },
+        "ConfluenceServer": {
+            "Description": "EC2 Instance Type",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [ "t2.nano","t2.micro","t2.small","t2.medium","t2.xlarge","t2.2xlarge" ],
+            "ConstraintDescription": "Must be a valid EC2 instance type"
+        }
+    },
+    "Resources": {
+        "ALBSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "ALB SecGrp",
+                "GroupName": {"Fn::Join": ["-",[{"Ref": "NameTag"},"ALBSG"]]},
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "Description": "Allow Access from Everywhere",
+                        "FromPort": 8080,
+                        "IpProtocol": "tcp",
+                        "ToPort": 8080
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "Description": "Allow Access from Everywhere",
+                        "FromPort": 8090,
+                        "IpProtocol": "tcp",
+                        "ToPort": 8090
+                    }
+                ],
+                "VpcId": {"Ref": "VPCID"}
+            }
+        },
+        "ServerSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Servers SG",
+                "GroupName": {
+                    "Fn::Join": ["-",[{"Ref": "NameTag"},"ServerSG"]]},
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "Description": "Allow Access",
+                        "FromPort": 22,
+                        "IpProtocol": "tcp",
+                        "ToPort": 22
+                    },
+                    {
+                        "SourceSecurityGroupId": {
+                            "Ref": "ALBSG"
+                        },
+                        "Description": "Allow ALBSG",
+                        "FromPort": 8080,
+                        "IpProtocol": "tcp",
+                        "ToPort": 8080
+                    },
+                    {
+                        "SourceSecurityGroupId": {
+                            "Ref": "ALBSG"
+                        },
+                        "Description": "Allow ALBSG",
+                        "FromPort": 8090,
+                        "IpProtocol": "tcp",
+                        "ToPort": 8090
+                    }
+                ],
+                "VpcId": {"Ref": "VPCID"}}
+            },
+        "RdsSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "RDS DB SG",
+                "GroupName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "NameTag"
+                            },
+                            "DbSG"
+                        ]
+                    ]
+                },
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "Description": "Allow Access",
+                        "FromPort": 5435,
+                        "IpProtocol": "tcp",
+                        "ToPort": 5435
+                    },
+                    {
+                        "SourceSecurityGroupId": {
+                            "Ref": "ServerSG"
+                        },
+                        "Description": "Allow App access",
+                        "FromPort": 5435,
+                        "IpProtocol": "tcp",
+                        "ToPort": 5435
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "Description": "Allow admin access",
+                        "FromPort": 5435,
+                        "IpProtocol": "tcp",
+                        "ToPort": 5435
+                    }
+                ],
+                "VpcId": {"Ref": "VPCID"}
+            }
+        },
+        "Jira1": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {"Ref": "JiraServer"},
+                "SecurityGroupIds": [{"Ref": "ServerSG"}],
+                "KeyName": {"Ref": "KeyName"},
+                "ImageId": {"Ref": "AMI"},
+                "SubnetId": {"Ref": "SubnetOne"},
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sdb",
+                        "Ebs": {
+                            "DeleteOnTermination": true,
+                            "Encrypted": true,
+                            "VolumeSize": 100,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "Tags": [{"Key": "Name","Value": {"Fn::Join": ["-",[{"Ref": "NameTag"},"Jira"]]}}],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Sub": "#!/bin/bash\n${MyUserData}\n"
+                    }
+                }
+            }
+        },
+        "Jira2": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {"Ref": "JiraServer"},
+                "SecurityGroupIds": [{"Ref": "ServerSG"}],
+                "KeyName": {"Ref": "KeyName"},
+                "ImageId": {"Ref": "AMI"},
+                "SubnetId": {"Ref": "SubnetThree"},
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sdb",
+                        "Ebs": {
+                            "DeleteOnTermination": true,
+                            "Encrypted": true,
+                            "VolumeSize": 100,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "Tags": [{"Key": "Name","Value": {"Fn::Join": ["-",[{"Ref": "NameTag"},"Jira"]]}}],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Sub": "#!/bin/bash\n${MyUserData}\n"
+                    }
+                }
+            }
+        },
+        "Confluence1": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {"Ref": "ConfluenceServer"},
+                "SecurityGroupIds": [{"Ref": "ServerSG"}],
+                "KeyName": {"Ref": "KeyName"},
+                "ImageId": {"Ref": "AMI"},
+                "SubnetId": {"Ref": "SubnetTwo"},
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sdb",
+                        "Ebs": {
+                            "DeleteOnTermination": true,
+                            "Encrypted": true,
+                            "VolumeSize": 100,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "Tags": [{"Key": "Name","Value": {"Fn::Join": ["-",[{"Ref": "NameTag"},"Confluence"]]}}],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Sub": "#!/bin/bash\n${MyUserData}\n"
+                    }
+                }
+            }
+        },
+        "Confluence2": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "InstanceType": {"Ref": "ConfluenceServer"},
+                "SecurityGroupIds": [{"Ref": "ServerSG"}],
+                "KeyName": {"Ref": "KeyName"},
+                "ImageId": {"Ref": "AMI"},
+                "SubnetId": {"Ref": "SubnetFour"},
+                "BlockDeviceMappings": [
+                    {
+                        "DeviceName": "/dev/sdb",
+                        "Ebs": {
+                            "DeleteOnTermination": true,
+                            "Encrypted": true,
+                            "VolumeSize": 100,
+                            "VolumeType": "gp2"
+                        }
+                    }
+                ],
+                "Tags": [{"Key": "Name","Value": {"Fn::Join": ["-",[{"Ref": "NameTag"},"Confluence"]]}}],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Sub": "#!/bin/bash\n${MyUserData}\n"
+                    }
+                }
+            }
+        },
+        "EC2TargetGroup8080": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 30,
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 15,
+                "HealthyThresholdCount": 5,
+                "Matcher": {"HttpCode": "200"},
+                "Name": {"Ref": "EC2TargetGroup8080Name"},
+                "Port": 8080,
+                "Protocol": "HTTP",
+                "TargetGroupAttributes": [
+                    {
+                        "Key": "stickiness.enabled",
+                        "Value": "true"
+                    },
+                    {
+                        "Key": "stickiness.type",
+                        "Value": "lb_cookie"
+                    },
+                    {
+                        "Key": "stickiness.lb_cookie.duration_seconds",
+                        "Value": "604800"
+                    }
+                ],
+                "Targets": [
+                    {"Id": {
+                        "Ref": "Jira1"},
+                        "Port": 8080
+                    },
+                    {"Id": {
+                        "Ref": "Jira2"},
+                        "Port": 8080
+                    }
+                ],
+                "UnhealthyThresholdCount": 3,
+                "VpcId": {"Ref": "VPCID"}
+            }
+        },
+        "ALBListener1": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {
+                        "Type": "forward",
+                        "TargetGroupArn": { "Ref": "EC2TargetGroup8080"}
+                    }
+                ],
+                "LoadBalancerArn": {"Ref": "ApplicationLoadBalancer"},
+                "Port": 8080,
+                "Protocol": "HTTP"
+            }
+        },
+        "EC2TargetGroup8090": {
+            "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+            "Properties": {
+                "HealthCheckIntervalSeconds": 30,
+                "HealthCheckProtocol": "HTTP",
+                "HealthCheckTimeoutSeconds": 15,
+                "HealthyThresholdCount": 5,
+                "Matcher": {"HttpCode": "200"},
+                "Name": {"Ref": "EC2TargetGroup8090Name"},
+                "Port": 8090,
+                "Protocol": "HTTP",
+                "TargetGroupAttributes": [
+                    {"Key": "stickiness.enabled","Value": "true"},
+                    {"Key": "stickiness.type","Value": "lb_cookie"},
+                    {"Key": "stickiness.lb_cookie.duration_seconds","Value": "604800"}
+                ],
+                "Targets": [
+                    {"Id": {
+                        "Ref": "Confluence1"},
+                        "Port": 8090
+                    },
+                    {"Id": {
+                        "Ref": "Confluence2"},
+                        "Port": 8090
+                    }
+                ],
+                "UnhealthyThresholdCount": 3,
+                "VpcId": {"Ref": "VPCID"}
+            }
+        },
+        "ALBListener2": {
+            "Type": "AWS::ElasticLoadBalancingV2::Listener",
+            "Properties": {
+                "DefaultActions": [
+                    {"Type": "forward",
+                    "TargetGroupArn": {"Ref": "EC2TargetGroup8090"}
+                    }
+                ],
+                "LoadBalancerArn": {
+                    "Ref": "ApplicationLoadBalancer"
+                },
+                "Port": 8090,
+                "Protocol": "HTTP"
+            }
+        },
+        "ApplicationLoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+            "Properties": {
+                "Scheme": "internal",
+                "Subnets": [
+                    {"Ref": "ALBSubnetIDOne"},
+                    {"Ref": "ALBSubnetIDTwo"}
+                ],
+                "SecurityGroups": [{"Ref": "ALBSG"}]
+            }
+        },
+        "DBSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "IacSubnets",
+                "DBSubnetGroupName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "NameTag"
+                            },
+                            "DbSubGrp"
+                        ]
+                    ]
+                },
+                "SubnetIds": {"Ref": "RdsSubnetGroupDB"}
+            }
+        },
+        "IacRDS": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "AllocatedStorage": {"Ref": "RdsSize"},
+                "AllowMajorVersionUpgrade": false,
+                "AutoMinorVersionUpgrade": true,
+                "BackupRetentionPeriod": {"Ref": "RdsBackupRetention"},
+                "DBInstanceClass": "db.m5.large",
+                "Engine": {"Ref": "RdsEngine"},
+                "EngineVersion": {"Ref": "RdsEngineVersion"},
+                "MasterUsername": {"Ref": "MasterUsername"},
+                "MasterUserPassword": {"Ref": "MasterPassword"},
+                "StorageEncrypted": true,
+                "MultiAZ": false,
+                "StorageType": {"Ref": "RdsStorageType"},
+                "PubliclyAccessible": false,
+                "DBSubnetGroupName": {"Ref": "DBSubnetGroup"},
+                "Tags": [{"Key": "Name","Value": { "Fn::Join": ["-",[{"Ref": "NameTag"},"RDS"]]}}],
+                "VPCSecurityGroups": [{"Ref": "RdsSG"}]
+            }
+        }
+    },
+    "Outputs": {}
+}
